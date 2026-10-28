@@ -11,6 +11,8 @@ const ENABLED = typeof __LFM3_TEST__ !== 'undefined' && __LFM3_TEST__;
 // Pinned by commit, never a branch.
 const LFM3_MODEL =
   'https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/4b423c332fd97961416f2e8b69467758fd27370d/LFM3-1.7B-QAD-Q4_0.gguf';
+const LFM3_SIZE = 1049615680;
+const LFM3_SHA256 = '43a7d09a0e9cba91b63eb7052488b9564569bddfd65754d2e426465e572a7452';
 
 const TIMEOUT = 20 * 60 * 1000;
 
@@ -23,8 +25,17 @@ const createWllama = () => {
 test.sequential.skipIf(!ENABLED)(
   'LFM3-1.7B loads, chats, and follows a JSON schema',
   async () => {
+    // Fetched into memory and loaded as a Blob: the cache (OPFS) behind
+    // loadModelFromUrl exceeds the storage quota of the Playwright context.
+    const res = await fetch(LFM3_MODEL);
+    expect(res.ok).toBe(true);
+    const bytes = await res.arrayBuffer();
+    expect(bytes.byteLength).toBe(LFM3_SIZE);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    expect(Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')).toBe(LFM3_SHA256);
+
     const wllama = createWllama();
-    await wllama.loadModelFromUrl(LFM3_MODEL, { n_ctx: 2048, n_threads: 2 });
+    await wllama.loadModel([new Blob([bytes])], { n_ctx: 2048, n_threads: 2 });
     expect(wllama.isModelLoaded()).toBe(true);
     expect(wllama.getModelMetadata().meta['general.architecture']).toBe('lfm3');
 
