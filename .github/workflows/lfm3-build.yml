@@ -36,7 +36,16 @@ jobs:
           (cd llama.cpp && grep -c '"lfm3"' src/llama-arch.cpp)
 
       - name: Build wasm (main + compat)
-        run: ./scripts/build_wasm.sh
+        run: |
+          set -o pipefail
+          ./scripts/build_wasm.sh 2>&1 | tee build-wasm.log || {
+            # job logs need auth to read; annotations don't, so surface errors there
+            grep -E 'error:|CMake Error|undefined symbol|failed' build-wasm.log | head -20 | while IFS= read -r l; do
+              echo "::error::${l:0:900}"
+            done
+            tail -5 build-wasm.log | while IFS= read -r l; do echo "::error::tail: ${l:0:900}"; done
+            exit 1
+          }
 
       - name: Wasm outputs exist
         run: |
