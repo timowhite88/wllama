@@ -1,0 +1,85 @@
+name: LFM3 build
+
+# Builds wllama + wllama-compat against llama.cpp b11960 (first tag with the
+# `lfm3` architecture, ggml-org/llama.cpp#31252), runs the upstream browser
+# test suite plus an LFM3-1.7B end-to-end test, and publishes the two npm
+# tarballs with their sha256 so a consumer can pin the exact bytes.
+
+on:
+  push:
+    branches:
+      - lfm3
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          # build_worker.sh counts llama.cpp commits for LIBLLAMA_VERSION
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record pins
+        run: |
+          echo "wllama   $(git rev-parse HEAD)"
+          echo "llama.cpp $(git rev-parse HEAD:llama.cpp) ($(cd llama.cpp && git describe --tags --always))"
+          (cd llama.cpp && grep -c '"lfm3"' src/llama-arch.cpp)
+
+      - name: Build wasm (main + compat)
+        run: ./scripts/build_wasm.sh
+
+      - name: Wasm outputs exist
+        run: |
+          test -s src/wasm/wllama.wasm
+          test -s src/wasm/wllama.js
+          test -s compat/wasm/wllama.wasm
+          test -s compat/wasm/wllama.js
+          grep -c -a 'lfm3' src/wasm/wllama.wasm
+          grep -c -a 'lfm3' compat/wasm/wllama.wasm
+          docker image inspect --format '{{.Id}} {{.RepoTags}}' emscripten/emsdk:4.0.20 || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci --include=dev
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Upstream test suite (Chromium)
+        run: npx vitest run
+
+      - name: LFM3-1.7B end to end (Chromium)
+        run: LFM3_TEST=1 npx vitest run src/lfm3.test.ts
+
+      - name: Pack
+        run: |
+          mkdir -p out
+          npm pack --pack-destination out
+          (cd compat && npm pack --pack-destination ../out)
+          cp src/wasm/wllama.wasm out/wllama.wasm
+          cp compat/wasm/wllama.wasm out/compat-wllama.wasm
+          cp compat/wasm/wllama.js out/compat-wllama.js
+          for t in out/*.tgz; do echo "== $t"; tar tzvf "$t" | grep -E 'wasm|package.json'; done
+          (cd out && sha256sum * | tee SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wllama-lfm3
+          path: out/
+          retention-days: 90

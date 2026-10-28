@@ -15,6 +15,7 @@ const chromeArgsWebGPU = [
 export default defineConfig({
   define: {
     __GITHUB_CI__: JSON.stringify(!!process.env.GITHUB_ACTIONS),
+    __LFM3_TEST__: JSON.stringify(process.env.LFM3_TEST === '1'),
   },
   test: {
     ...(AUTO ? { watch: false } : {}),
