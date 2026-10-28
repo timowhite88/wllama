@@ -83,7 +83,14 @@ jobs:
         run: npx vitest run
 
       - name: LFM3-1.7B end to end (Chromium)
-        run: LFM3_TEST=1 npx vitest run src/lfm3.test.ts
+        run: |
+          set -o pipefail
+          LFM3_TEST=1 npx vitest run src/lfm3.test.ts --reporter=default --reporter=github-actions 2>&1 | tee lfm3-test.log || {
+            grep -E 'Error|error|FAIL|expected|\[lfm3\]|Assertion|abort|wllama' lfm3-test.log | head -25 | while IFS= read -r l; do
+              echo "::error::${l:0:900}"
+            done
+            exit 1
+          }
 
       - name: Pack
         run: |
