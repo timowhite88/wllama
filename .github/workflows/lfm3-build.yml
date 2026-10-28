@@ -35,6 +35,15 @@ jobs:
           echo "llama.cpp $(git rev-parse HEAD:llama.cpp) ($(cd llama.cpp && git describe --tags --always))"
           (cd llama.cpp && grep -c '"lfm3"' src/llama-arch.cpp)
 
+      # emscripten wasm64: INT64_C(1) is a `long` literal but int64_t is `long long`,
+      # so std::max({int64_t, INT64_C(..)}) has mixed types (src/models/deepseek41.cpp).
+      # Native Linux has both as `long`, so upstream never sees it. Same value, explicit type.
+      - name: Patch llama.cpp INT64_C for wasm64
+        run: |
+          grep -rl 'INT64_C(' llama.cpp/src | tee /dev/stderr | xargs -r sed -i -E 's/\bINT64_C\(([^()]*)\)/int64_t(\1)/g'
+          ! grep -rn '\bINT64_C(' llama.cpp/src
+          (cd llama.cpp && git diff --stat)
+
       - name: Build wasm (main + compat)
         run: |
           set -o pipefail
